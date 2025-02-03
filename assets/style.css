@@ -1,0 +1,17 @@
+.payment_method_custom_gateway {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.woo-payment-logo {
+    width: 32px;
+    height: auto;
+    margin-top: 5px;
+}
+
+.woo-payment-description {
+    margin-top: 5px;
+    font-size: 14px;
+    color: #666;
+}

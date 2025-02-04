@@ -5,8 +5,6 @@ if (!defined('ABSPATH')) {
 
 /**
  * Custom Payment Gateway Class for WooCommerce.
- *
- * Extends the WooCommerce WC_Payment_Gateway class to create a custom payment gateway.
  */
 class WC_Custom_Gateway extends WC_Payment_Gateway {
 
@@ -77,15 +75,33 @@ class WC_Custom_Gateway extends WC_Payment_Gateway {
             echo wpautop(wp_kses_post($this->description));
         }
 
-        // Add custom payment fields if needed
+        // Get custom fields configuration
+        $custom_fields = get_option('woo_custom_gateway_fields_' . $this->id, array());
+
+        // Render custom fields
         echo '<fieldset id="wc-' . esc_attr($this->id) . '-form" class="wc-payment-form">';
+        foreach ($custom_fields as $field) {
+            echo '<div class="form-row form-row-wide">';
+            echo '<label for="' . esc_attr($field['label']) . '">' . esc_html($field['label']);
+            if ($field['required']) {
+                echo ' <span class="required">*</span>';
+            }
+            echo '</label>';
 
-        // Example: Add a custom input field
-        echo '<div class="form-row form-row-wide">
-                <label for="custom_field">' . __('Custom Field', 'woo-custom-payment-gateway') . ' <span class="required">*</span></label>
-                <input id="custom_field" name="custom_field" type="text" autocomplete="off">
-              </div>';
+            switch ($field['type']) {
+                case 'textarea':
+                    echo '<textarea id="' . esc_attr($field['label']) . '" name="' . esc_attr($field['label']) . '"></textarea>';
+                    break;
+                case 'checkbox':
+                    echo '<input type="checkbox" id="' . esc_attr($field['label']) . '" name="' . esc_attr($field['label']) . '">';
+                    break;
+                default:
+                    echo '<input type="text" id="' . esc_attr($field['label']) . '" name="' . esc_attr($field['label']) . '" autocomplete="off">';
+                    break;
+            }
 
+            echo '</div>';
+        }
         echo '</fieldset>';
     }
 
@@ -93,9 +109,12 @@ class WC_Custom_Gateway extends WC_Payment_Gateway {
      * Validate Payment Fields on the Checkout Page.
      */
     public function validate_fields() {
-        if (empty($_POST['custom_field'])) {
-            wc_add_notice(__('Please fill in the custom field.', 'woo-custom-payment-gateway'), 'error');
-            return false;
+        $custom_fields = get_option('woo_custom_gateway_fields_' . $this->id, array());
+        foreach ($custom_fields as $field) {
+            if ($field['required'] && empty($_POST[$field['label']])) {
+                wc_add_notice(sprintf(__('%s is a required field.', 'woo-custom-payment-gateway'), $field['label']), 'error');
+                return false;
+            }
         }
         return true;
     }
@@ -108,6 +127,15 @@ class WC_Custom_Gateway extends WC_Payment_Gateway {
      */
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
+
+        // Save custom field data
+        $custom_fields = get_option('woo_custom_gateway_fields_' . $this->id, array());
+        foreach ($custom_fields as $field) {
+            if (isset($_POST[$field['label']])) {
+                $order->update_meta_data($field['label'], sanitize_text_field($_POST[$field['label']]));
+            }
+        }
+        $order->save();
 
         // Mark the order as on-hold
         $order->update_status('on-hold', __('Awaiting payment confirmation.', 'woo-custom-payment-gateway'));

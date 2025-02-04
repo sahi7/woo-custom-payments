@@ -1,82 +1,140 @@
 <?php
-
 if (!defined('ABSPATH')) {
-    exit;
+    exit; // Exit if accessed directly
 }
 
+/**
+ * Custom Payment Gateway Class for WooCommerce.
+ *
+ * Extends the WooCommerce WC_Payment_Gateway class to create a custom payment gateway.
+ */
 class WC_Custom_Gateway extends WC_Payment_Gateway {
-    
-    public function __construct() {
-        $this->id = 'custom_gateway';
-        $this->method_title = __('Custom Payment', 'woo-custom-payments');
-        $this->method_description = __('A custom payment gateway with a logo.', 'woo-custom-payments');
-        $this->has_fields = false; // No custom fields
 
-        // Load settings
+    /**
+     * Constructor for the gateway.
+     */
+    public function __construct() {
+        $this->id                 = 'custom_gateway'; // Payment gateway ID (must be unique)
+        $this->icon               = ''; // URL of the icon to display (optional)
+        $this->has_fields         = true; // Set to true if you need custom payment fields
+        $this->method_title       = __('Custom Payment Gateway', 'woo-custom-payment-gateway'); // Title in WooCommerce settings
+        $this->method_description = __('Add a custom payment gateway to WooCommerce.', 'woo-custom-payment-gateway'); // Description in WooCommerce settings
+
+        // Load the settings
         $this->init_form_fields();
         $this->init_settings();
 
-        // Get settings
-        $this->title = $this->get_option('title');
+        // Define user-facing settings
+        $this->title       = $this->get_option('title');
         $this->description = $this->get_option('description');
-        $this->enabled = $this->get_option('enabled');
-        $this->payment_logo = $this->get_option('payment_logo');
+        $this->enabled     = $this->get_option('enabled');
+        $this->logo_url    = $this->get_option('logo_url');
 
         // Save settings
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
     }
 
-    // Admin settings fields
+    /**
+     * Initialize Gateway Settings Form Fields.
+     */
     public function init_form_fields() {
         $this->form_fields = array(
             'enabled' => array(
-                'title'   => __('Enable/Disable', 'woo-custom-payments'),
+                'title'   => __('Enable/Disable', 'woo-custom-payment-gateway'),
                 'type'    => 'checkbox',
-                'label'   => __('Enable this payment method', 'woo-custom-payments'),
-                'default' => 'yes'
+                'label'   => __('Enable Custom Payment Gateway', 'woo-custom-payment-gateway'),
+                'default' => 'no',
             ),
             'title' => array(
-                'title'       => __('Title', 'woo-custom-payments'),
+                'title'       => __('Title', 'woo-custom-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Title displayed at checkout.', 'woo-custom-payments'),
-                'default'     => __('Custom Payment', 'woo-custom-payments'),
+                'description' => __('This controls the title which the user sees during checkout.', 'woo-custom-payment-gateway'),
+                'default'     => __('Custom Payment Gateway', 'woo-custom-payment-gateway'),
                 'desc_tip'    => true,
             ),
             'description' => array(
-                'title'       => __('Description', 'woo-custom-payments'),
+                'title'       => __('Description', 'woo-custom-payment-gateway'),
                 'type'        => 'textarea',
-                'description' => __('Payment method description displayed at checkout.', 'woo-custom-payments'),
-                'default'     => __('Pay with this custom payment gateway.', 'woo-custom-payments'),
+                'description' => __('This controls the description which the user sees during checkout.', 'woo-custom-payment-gateway'),
+                'default'     => __('Pay using your custom payment method.', 'woo-custom-payment-gateway'),
                 'desc_tip'    => true,
             ),
-            'payment_logo' => array(
-                'title'       => __('Payment Logo URL', 'woo-custom-payments'),
+            'logo_url' => array(
+                'title'       => __('Payment Logo URL', 'woo-custom-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Enter the URL of the payment logo to display.', 'woo-custom-payments'),
+                'description' => __('Add a logo for your payment gateway (optional).', 'woo-custom-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
             ),
         );
     }
 
-    // Custom checkout display (logo below label)
-    public function get_title() {
-        return esc_html($this->title);
+    /**
+     * Display Payment Fields on the Checkout Page.
+     */
+    public function payment_fields() {
+        if ($this->description) {
+            echo wpautop(wp_kses_post($this->description));
+        }
+
+        // Add custom payment fields if needed
+        echo '<fieldset id="wc-' . esc_attr($this->id) . '-form" class="wc-payment-form">';
+
+        // Example: Add a custom input field
+        echo '<div class="form-row form-row-wide">
+                <label for="custom_field">' . __('Custom Field', 'woo-custom-payment-gateway') . ' <span class="required">*</span></label>
+                <input id="custom_field" name="custom_field" type="text" autocomplete="off">
+              </div>';
+
+        echo '</fieldset>';
     }
 
-    // Add logo below the title
-    public function get_description() {
-        $logo = $this->payment_logo ? '<img src="' . esc_url($this->payment_logo) . '" class="woo-payment-logo">' : '';
-        return $logo . '<p class="woo-payment-description">' . esc_html($this->description) . '</p>';
+    /**
+     * Validate Payment Fields on the Checkout Page.
+     */
+    public function validate_fields() {
+        if (empty($_POST['custom_field'])) {
+            wc_add_notice(__('Please fill in the custom field.', 'woo-custom-payment-gateway'), 'error');
+            return false;
+        }
+        return true;
     }
 
-    // Process the payment (for order status update)
+    /**
+     * Process the Payment and Return the Result.
+     *
+     * @param int $order_id Order ID.
+     * @return array
+     */
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
-        $order->update_status('on-hold', __('Awaiting payment confirmation.', 'woo-custom-payments'));
+
+        // Mark the order as on-hold
+        $order->update_status('on-hold', __('Awaiting payment confirmation.', 'woo-custom-payment-gateway'));
+
+        // Reduce stock levels
+        wc_reduce_stock_levels($order_id);
+
+        // Empty the cart
+        WC()->cart->empty_cart();
+
+        // Return thank-you page redirect
         return array(
             'result'   => 'success',
             'redirect' => $this->get_return_url($order),
         );
+    }
+
+    /**
+     * Get Payment Gateway Icon.
+     *
+     * @return string
+     */
+    public function get_icon() {
+        $icon = '';
+        if ($this->logo_url) {
+            $icon = '<img src="' . esc_url($this->logo_url) . '" alt="' . esc_attr($this->title) . '" />';
+        }
+        return apply_filters('woocommerce_gateway_icon', $icon, $this->id);
     }
 }
